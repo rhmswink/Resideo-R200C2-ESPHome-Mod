@@ -1,0 +1,45 @@
+esphome:
+  name: resideo
+  includes:
+    - cm1106_sensor.h
+    - cht8305_sensor.h
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: arduino
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secred wifi_pw
+    
+uart:
+  rx_pin: 20
+  baud_rate: 9600
+  rx_buffer_size: 128
+  id: cm1106_uart
+
+sensor:
+- platform: custom
+  lambda: |-
+    auto cm1106Sensor = new CM1106Sensor(id(cm1106_uart), 30000);
+    App.register_component(cm1106Sensor);
+    return {cm1106Sensor};
+  sensors:
+  - name: "CO₂ Sensor"
+    accuracy_decimals: 0
+    unit_of_measurement: "ppm"
+    icon: "mdi:molecule-co2"
+
+- platform: custom
+  lambda: |-
+    auto cht8305Sensor = new Cht8305Sensor(2000);
+    App.register_component(cht8305Sensor);
+    return {cht8305Sensor->temperature_sensor, cht8305Sensor->humidity_sensor};
+  sensors:
+  - name: "Temperature"
+    accuracy_decimals: 1
+    unit_of_measurement: "°C"
+  - name: "Humidity"
+    accuracy_decimals: 1
+    unit_of_measurement: "%"
