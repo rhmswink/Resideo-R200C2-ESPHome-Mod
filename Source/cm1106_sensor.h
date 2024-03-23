@@ -8,14 +8,19 @@ public:
     CM1106(UARTComponent *parent) : UARTDevice(parent) {}
 
     int16_t getCo2PPM() {
-        uint8_t expectedBytes[] = {0x16, 0x05, 0x01};
-        int currentPos = 0;
+        // The expected response consists of 8 bytes
+        // | 0    | 1   | 2   | 3     | 4     | 5     | 6     | 7  |
+        // | HEAD | LEN | CMD | DATA1 | DATA2 | DATA3 | DATA4 | CS |
         uint8_t response[NUM_MSG_BYTES] = {0};
 
-        // Check how many bytes the UART RX buffer has stored
-        int availableBytes = readUartFillLevel();
+        // All read responses start with 0x16
+        // The payload length for the Co2 message is 0x05
+        // The command for the Co2 message is 0x01
+        uint8_t expectedHeader[] = {0x16, 0x05, 0x01};
+        int currentPos = 0;
 
-        // Check if there is a message in the buffer
+        int availableBytes = readUartFillLevel();
+        
         if (availableBytes < NUM_MSG_BYTES) {
             return -1;
         }
@@ -26,22 +31,22 @@ public:
             availableBytes = readUartFillLevel();
         }
 
-        // Check if this is the expected message
-        while (currentPos < sizeof(expectedBytes)) {
+        // Find the expected header
+        while (currentPos < sizeof(expectedHeader)) {
             if (readUartFillLevel()) {
                 readUartResponse(response+currentPos, 1);
             } else {
                 return -1;
             }
             
-            if (response[currentPos] == expectedBytes[currentPos]) {
+            if (response[currentPos] == expectedHeader[currentPos]) {
                 currentPos++;
             }
         }
 
         // If present, read the data and checksum
-        if (readUartFillLevel() >= NUM_MSG_BYTES - sizeof(expectedBytes)) {
-            readUartResponse(response+currentPos, NUM_MSG_BYTES - sizeof(expectedBytes));
+        if (readUartFillLevel() >= NUM_MSG_BYTES - sizeof(expectedHeader)) {
+            readUartResponse(response+currentPos, NUM_MSG_BYTES - sizeof(expectedHeader));
         } else {
             ESP_LOGW(TAG, "The last message in the buffer was not complete");
             return -1;
