@@ -1,4 +1,5 @@
 // This driver is based on this post: https://gathering.tweakers.net/forum/list_message/77705490#77705490
+// And partially based on this datasheet: https://dfimg.dfrobot.com/nobody/wiki/4c8e1057e1c118e5c72f8ff6147575db.pdf
 
 #include "esphome.h"
 
@@ -9,18 +10,31 @@
 class Cht8305Sensor : public PollingComponent, public Sensor {
 private:
 
-    void readByte(uint8_t *data) {
+    bool readAck() {
+        bool ack;
+        while (digitalRead(SCL_PIN) == LOW) {} // Wait for clock pulse
+        ack = digitalRead(SDA_PIN) == LOW?true:false;
+        while (digitalRead(SCL_PIN) == HIGH) {} // Wait for SCL to go low (end of bit)
+        return ack;
+    }
+
+    bool readByte(uint8_t *data) {
         for (int i = 0; i < 8; i++) {
             while (digitalRead(SCL_PIN) == LOW) {} // Wait for clock pulse
             *data = (*data << 1) | digitalRead(SDA_PIN);
             while (digitalRead(SCL_PIN) == HIGH) {} // Wait for SCL to go low (end of bit)
         }
+        return readAck();
     }
 
-    void readAck(bool *ack) {
-        while (digitalRead(SCL_PIN) == LOW) {} // Wait for clock pulse
-        *ack = digitalRead(SDA_PIN) == LOW?true:false;
-        while (digitalRead(SCL_PIN) == HIGH) {} // Wait for SCL to go low (end of bit)
+    void readRegister(uint16_t *data) {
+        uint8_t receivedByte;
+
+        readByte(&receivedByte); // MSB
+        *data = (receivedByte << 8);
+        
+        readByte(&receivedByte); // LSB        
+        *data = *data | receivedByte;
     }
 
 public:
@@ -52,52 +66,29 @@ public:
         // Check again to see if the bus is still idle
         if (digitalRead(SDA_PIN) == HIGH && digitalRead(SCL_PIN) == HIGH) {
             ESP_LOGD("I2C", "The bus is probably idle, start listening");
-            while (digitalRead(SCL_PIN) == HIGH) {} // Wait for the start of a new byte
+            while (digitalRead(SCL_PIN) == HIGH) {} // Wait for the start bit
 
-            // Assume that the bus is stable; start reading
-            readByte(&receivedByte);
-            readAck(&receivedAck);
+            receivedAck = readByte(&receivedByte);
 
-            // this should be the address
-            ESP_LOGD("I2C", "received address %02X, result:%s", receivedByte, receivedAck?"ACK":"NACK");
+            // First a write request is expected
             if (receivedByte != 0x80 || !receivedAck) {
                 ESP_LOGW("I2C", "invalid write request, breaking off. addr=%02X, ack=%u", receivedByte, receivedAck);
-                // continue;
                 return;
             }
             
-            while (digitalRead(SDA_PIN) == LOW) {} // Wait for the stop bit
+            while (digitalRead(SDA_PIN) != HIGH || digitalRead(SCL_PIN) != HIGH) {} // Wait for the stop bit
             while (digitalRead(SCL_PIN) == HIGH) {} // Wait for the start bit
 
-            readByte(&receivedByte);
-            readAck(&receivedAck);
+            // Assume that the bus is stable; start reading
+            receivedAck = readByte(&receivedByte);
 
             if (receivedByte != 0x81 || !receivedAck) {
                 ESP_LOGW("I2C", "invalid read request, breaking off. addr=%02X, ack=%u", receivedByte, receivedAck);
-                // continue;
                 return;
             }
             
-            readByte(&receivedByte); // MSB of temperature
-            readAck(&receivedAck);
-
-            rawTemp = (receivedByte << 8);
-            
-            readByte(&receivedByte); // LSB of temperature
-            readAck(&receivedAck);
-            
-            rawTemp = rawTemp | receivedByte;
-
-            
-            readByte(&receivedByte); // MSB of humidity
-            readAck(&receivedAck);
-
-            rawHum = (receivedByte << 8);
-            
-            readByte(&receivedByte); // LSB of humidity
-            readAck(&receivedAck);
-            
-            rawHum = rawHum | receivedByte;
+            readRegister(&rawTemp);
+            readRegister(&rawHum);
 
             double temperature = 165 * (rawTemp / 65535.0) - 40;
             temperature -= 1.4; // as seen on the display
@@ -108,10 +99,8 @@ public:
             humidity += 2; // as seen on the display
             ESP_LOGD("cht8305", "humidity: %f raw:%i", humidity, rawHum);
             humidity_sensor->publish_state(humidity);
-
-            // break;
         } else {
-            ESP_LOGD("I2C", "The bus was not idle");
+            ESP_LOGW("I2C", "The bus was not idle");
         }
     }
 };
