@@ -15,11 +15,17 @@ api:
 
 ota:
   password: ""
-  
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_pw
-    
+  
+  # Optionally assign a static IP address
+  # This is recommended to reduce connection times
+  manual_ip:
+    static_ip: ""
+    gateway: ""
+    subnet: ""
 uart:
   rx_pin: 20
   baud_rate: 9600
@@ -36,17 +42,25 @@ sensor:
   - name: "CO₂ Sensor"
     accuracy_decimals: 0
     unit_of_measurement: "ppm"
+    device_class: "carbon_dioxide"
+    state_class: "measurement"
     icon: "mdi:molecule-co2"
 
 - platform: custom
   lambda: |-
-    auto cht8305Sensor = new Cht8305Sensor(2000);
+    auto cht8305Sensor = new Cht8305Sensor(60000);
     App.register_component(cht8305Sensor);
     return {cht8305Sensor->temperature_sensor, cht8305Sensor->humidity_sensor};
   sensors:
   - name: "Temperature"
     accuracy_decimals: 1
     unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
+    icon: "mdi:thermometer"
   - name: "Humidity"
     accuracy_decimals: 1
     unit_of_measurement: "%"
+    device_class: "humidity"
+    state_class: "measurement"
+    icon: "mdi:water-percent"
